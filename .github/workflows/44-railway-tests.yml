@@ -784,4 +784,12 @@ jobs:
             echo "| AGENTA_API_URL | \`${AGENTA_API_URL}\` | |"
             echo "| AGENTA_SERVICES_URL | \`${AGENTA_SERVICES_URL}\` | |"
             echo "| Status | \`${JOB_STATUS}\` | |"
+            echo
+            if [ -f web/tests/results/oss/results.json ]; then
+              pnpm --dir web/tests exec tsx playwright/scripts/summarize-flaky.ts results/oss/results.json
+            else
+              echo "## Flaky tests"
+              echo
+              echo "No Playwright JSON report was produced."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

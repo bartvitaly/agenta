@@ -55,6 +55,10 @@ export function getJunitPath(): string {
     return `${getResultsDir()}/junit.xml`
 }
 
+export function getJsonPath(): string {
+    return `${getResultsDir()}/results.json`
+}
+
 export function getChromiumLaunchOptions(): {args?: string[]} {
     const args: string[] = []
 

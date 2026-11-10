@@ -7,6 +7,7 @@ import dotenv from "dotenv"
 
 import {
     getChromiumLaunchOptions,
+    getJsonPath,
     getJunitPath,
     getOutputDir,
     getReportDir,
@@ -42,6 +43,8 @@ export default defineConfig({
     // overrides this for targeted local runs where the developer controls scope.
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
+    // One CI retry is kept; failOnFlakyTests then fails the run so a recovered flake cannot gate a release (#6912).
+    failOnFlakyTests: !!process.env.CI,
     retries: process.env.CI ? 1 : process.env.RETRIES ? parseInt(process.env.RETRIES) : 0,
     maxFailures: process.env.CI ? 5 : 0,
     globalTimeout: process.env.CI ? 20 * 60 * 1000 : 0,
@@ -49,7 +52,12 @@ export default defineConfig({
     reporter: [
         ["html", {outputFolder: getReportDir()}],
         ["junit", {outputFile: getJunitPath()}],
-        ...(process.env.CI ? ([["github"]] as [["github"]]) : []),
+        ...(process.env.CI
+            ? ([["github"], ["json", {outputFile: getJsonPath()}]] as [
+                  ["github"],
+                  ["json", {outputFile: string}],
+              ])
+            : []),
         [require.resolve("./playwright/live-reporter.ts")],
     ],
     outputDir: getOutputDir(),

@@ -1,5 +1,7 @@
 import type {FullResult, Reporter, TestCase, TestResult} from "@playwright/test/reporter"
 
+import {addOutcome, emptyCounts, formatLiveSummary} from "./flaky-report.ts"
+
 const STATUS_LABEL: Record<string, string> = {
     passed: "PASSED:  ",
     failed: "FAILED:  ",
@@ -46,9 +48,36 @@ interface FailureRecord {
     stderr: string
 }
 
+function printAttemptRecords(heading: string, records: FailureRecord[]): void {
+    if (records.length === 0) return
+    console.log(`\n${"─".repeat(60)}`)
+    console.log(`[test] ${heading} (${records.length})`)
+    console.log("─".repeat(60))
+    for (const {title, errors, stdout, stderr} of records) {
+        console.log(`\n  ✗ ${title}`)
+        for (const error of errors) {
+            printError(error, "    ")
+        }
+        if (stdout.trim()) {
+            console.log("    --- stdout ---")
+            for (const line of stripAnsi(stdout).trim().split("\n")) {
+                console.log(`    ${line}`)
+            }
+        }
+        if (stderr.trim()) {
+            console.log("    --- stderr ---")
+            for (const line of stripAnsi(stderr).trim().split("\n")) {
+                console.log(`    ${line}`)
+            }
+        }
+    }
+    console.log("─".repeat(60))
+}
+
 class LiveReporter implements Reporter {
-    private counts = {passed: 0, failed: 0, skipped: 0}
+    private counts = emptyCounts()
     private failures: FailureRecord[] = []
+    private flaky: FailureRecord[] = []
     // Tracks the last failed result per test for accurate failure reporting in onEnd
     private testResults: Map<string, {test: TestCase; lastFailedResult?: TestResult}> = new Map()
 
@@ -76,55 +105,30 @@ class LiveReporter implements Reporter {
     }
 
     onEnd(_result: FullResult): void {
-        // Aggregate using test.outcome() so retried-then-passed tests count as passed
         for (const {test, lastFailedResult} of this.testResults.values()) {
             const title = test.titlePath().slice(1).join(" > ")
             const outcome = test.outcome()
+            addOutcome(this.counts, outcome)
 
-            if (outcome === "skipped") {
-                this.counts.skipped++
-            } else if (outcome === "expected" || outcome === "flaky") {
-                this.counts.passed++
-            } else if (outcome === "unexpected" && lastFailedResult) {
-                this.counts.failed++
-                const stdout = lastFailedResult.stdout
-                    .map((c) => (typeof c === "string" ? c : c.toString()))
-                    .join("")
-                const stderr = lastFailedResult.stderr
-                    .map((c) => (typeof c === "string" ? c : c.toString()))
-                    .join("")
-                this.failures.push({title, errors: lastFailedResult.errors, stdout, stderr})
+            if (!lastFailedResult) continue
+            const stdout = lastFailedResult.stdout
+                .map((c) => (typeof c === "string" ? c : c.toString()))
+                .join("")
+            const stderr = lastFailedResult.stderr
+                .map((c) => (typeof c === "string" ? c : c.toString()))
+                .join("")
+            const record = {title, errors: lastFailedResult.errors, stdout, stderr}
+            if (outcome === "unexpected") {
+                this.failures.push(record)
+            } else if (outcome === "flaky") {
+                this.flaky.push(record)
             }
         }
 
-        const {passed, failed, skipped} = this.counts
+        printAttemptRecords("FAILURES", this.failures)
+        printAttemptRecords("FLAKY", this.flaky)
 
-        if (this.failures.length > 0) {
-            console.log(`\n${"─".repeat(60)}`)
-            console.log(`[test] FAILURES (${this.failures.length})`)
-            console.log("─".repeat(60))
-            for (const {title, errors, stdout, stderr} of this.failures) {
-                console.log(`\n  ✗ ${title}`)
-                for (const error of errors) {
-                    printError(error, "    ")
-                }
-                if (stdout.trim()) {
-                    console.log("    --- stdout ---")
-                    for (const line of stripAnsi(stdout).trim().split("\n")) {
-                        console.log(`    ${line}`)
-                    }
-                }
-                if (stderr.trim()) {
-                    console.log("    --- stderr ---")
-                    for (const line of stripAnsi(stderr).trim().split("\n")) {
-                        console.log(`    ${line}`)
-                    }
-                }
-            }
-            console.log("─".repeat(60))
-        }
-
-        console.log(`\n[test] ${passed} passed, ${failed} failed, ${skipped} skipped`)
+        console.log(`\n${formatLiveSummary(this.counts)}`)
     }
 }
 
